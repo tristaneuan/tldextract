@@ -24,6 +24,7 @@ try:
     import cPickle as pickle
 except ImportError:
     import pickle
+import functools
 import logging
 from operator import itemgetter
 import os
@@ -78,7 +79,7 @@ class ExtractResult(tuple):
     domain = property(itemgetter(1), doc='Alias for field number 1')
     tld = property(itemgetter(2), doc='Alias for field number 2')
 
-def extract(url, fetch=True, cache_file=''):
+def extract(url, fetch=True, cache_file='', cache_ttl_sec=0):
     """
     Takes a string URL and splits it into its subdomain, domain, and
     gTLD/ccTLD component. Ignores scheme, username, and path components.
@@ -91,15 +92,18 @@ def extract(url, fetch=True, cache_file=''):
     Specifying cache_file will override the location of the TLD set. Defaults
     to /path/to/tldextract/.tld_set.
 
+    Specifying a cache_ttl_sec > 0 will invalidate the TLD set after that
+    many seconds, and it will need to be re-fetched.
+
     >>> extract('http://forums.news.cnn.com/')
     ExtractResult(subdomain='forums.news', domain='cnn', tld='com')
     >>> extract('http://forums.bbc.co.uk/')
     ExtractResult(subdomain='forums', domain='bbc', tld='co.uk')
     """
     netloc = SCHEME_RE.sub("", url).partition("/")[0]
-    return _extract(netloc, fetch, cache_file)
+    return _extract(netloc, fetch, cache_file, cache_ttl_sec)
 
-def urlsplit(url, fetch=True, cache_file=''):
+def urlsplit(url, fetch=True, cache_file='', cache_ttl_sec=0):
     """Same as `extract` but calls urlparse.urlsplit to further 'validate' the
     input URL. This function will therefore raise the same errors as 
     urlparse.urlsplit and handle some inputs differently than extract, such as
@@ -111,11 +115,11 @@ def urlsplit(url, fetch=True, cache_file=''):
     ExtractResult(subdomain='', domain='', tld='')
     """
     netloc = urlparse.urlsplit(url).netloc
-    return _extract(netloc, fetch, cache_file)
+    return _extract(netloc, fetch, cache_file, cache_ttl_sec)
 
-def _extract(netloc, fetch=True, cache_file=''):
+def _extract(netloc, fetch=True, cache_file='', cache_ttl_sec=0):
     netloc = netloc.split("@")[-1].partition(':')[0]
-    registered_domain, tld = _get_tld_extractor(fetch, cache_file).extract(netloc)
+    registered_domain, tld = _get_tld_extractor(fetch, cache_file, cache_ttl_sec).extract(netloc)
     if not tld and netloc and netloc[0].isdigit():
         try:
             is_ip = socket.inet_aton(netloc)
@@ -131,7 +135,7 @@ def _extract(netloc, fetch=True, cache_file=''):
 
 TLD_EXTRACTOR = None
 
-def _get_tld_extractor(fetch=True, cache_file=''):
+def _get_tld_extractor(fetch=True, cache_file='', cache_ttl_sec=0):
     global TLD_EXTRACTOR
     if TLD_EXTRACTOR:
         return TLD_EXTRACTOR
