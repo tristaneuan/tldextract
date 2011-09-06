@@ -31,6 +31,7 @@ import os
 import pkg_resources
 import re
 import socket
+import time
 import urllib2
 import urlparse
 import warnings
@@ -81,22 +82,28 @@ class ExtractResult(tuple):
     tld = property(itemgetter(2), doc='Alias for field number 2')
 
 class TLDExtract(object):
-    def __init__(self, fetch=True, cache_file=''):
+    def __init__(self, fetch=True, cache_file='', cache_ttl_sec=0):
         """
         Constructs a callable for extracting subdomain, domain, and TLD
         components from a URL.
 
-        If fetch is True (the default) and no cached TLD set is found, this
-        extractor will fetch TLD sources live over HTTP on first use. Set to
-        False to not make HTTP requests. Either way, if the TLD set can't be
-        read, the module will fall back to the included TLD set snapshot.
+        If fetch is True (the default) and no cached TLD set is found, or it's
+        expired, this extractor will fetch TLD sources live over HTTP on first
+        use. Set to False to not make HTTP requests. Either way, if the TLD set
+        can't be read, the module will fall back to the included TLD set
+        snapshot.
 
         Specifying cache_file will override the location of the TLD set.
         Defaults to /path/to/tldextract/.tld_set.
 
+        If cache_ttl_sec > 0 and cache_file's last-modified time is more than
+        cache_ttl_sec ago, the cache_file is expired and this instance will
+        refetch it on call (assuming fetch=True).
         """
         self.fetch = fetch
         self.cache_file = cache_file
+        self.cache_file_mtime = 0
+        self.cache_ttl_sec = max(cache_ttl_sec, 0)
         self._extractor = None
 
     def __call__(self, url):
@@ -129,18 +136,30 @@ class TLDExtract(object):
         subdomain, _, domain = registered_domain.rpartition('.')
         return ExtractResult(subdomain, domain, tld)
 
+    @property
+    def expired(self):
+        """
+        If fetch and cache_ttl_sec have been set, is the TLD set older than
+        the TTL?
+        """
+        return self.cache_ttl_sec and self.cache_file_mtime and self.fetch and time.time() - self.cache_file_mtime > self.cache_ttl_sec
+
     def _get_tld_extractor(self):
-        if self._extractor:
+        if self._extractor and not self.expired:
             return self._extractor
 
         moddir = os.path.dirname(__file__)
         cached_file = self.cache_file or os.path.join(moddir, '.tld_set')
-        try:
-            with open(cached_file) as f:
-                self._extractor = _PublicSuffixListTLDExtractor(pickle.load(f))
-                return self._extractor
-        except IOError, file_not_found:
-            pass
+        if os.path.exists(cached_file):
+            self.cache_file_mtime = os.path.getmtime(cached_file)
+            if not self.expired:
+                try:
+                    with open(cached_file) as f:
+                        self._extractor = _PublicSuffixListTLDExtractor(pickle.load(f))
+                        return self._extractor
+                except IOError, ioe:
+                    LOG.error("error reading TLD cache file %s: %s", cached_file, ioe)
+                    self.cache_file_mtime = 0
 
         tlds = frozenset()
         if self.fetch:
@@ -149,6 +168,7 @@ class TLDExtract(object):
 
         if not tlds:
             with pkg_resources.resource_stream(__name__, '.tld_set_snapshot') as snapshot_file:
+                self.cache_file_mtime = time.time()
                 self._extractor = _PublicSuffixListTLDExtractor(pickle.load(snapshot_file))
                 return self._extractor
 
@@ -167,6 +187,7 @@ class TLDExtract(object):
         except IOError, e:
             LOG.warn("unable to cache TLDs in file %s: %s", cached_file, e)
 
+        self.cache_file_mtime = time.time()
         self._extractor = _PublicSuffixListTLDExtractor(tlds)
         return self._extractor
 
