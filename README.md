@@ -60,26 +60,18 @@ Run tests:
 
 ## Version History
 
+* 0.4
+    * Need more control over the fetching and caching of the Public Suffix List? Instead of using the global convenience function `tldextract.extract`, you can construct your own extract callable: `extract = tldextract.TLDExtract(fetch=True, cache_file='/path/to/your/cache/file', cache_ttl_sec=60*60*24*7)`. The first arg controls whether live HTTP requests will be made to get the Public Suffix List, otherwise falling back on the included [snapshot](https://github.com/john-kurkowski/tldextract/blob/master/tldextract/.tld_set_snapshot). The second arg is handy if you have limited permissions where temp files can go. The third arg expires the cache file after that many seconds, and it will then be refetched if `fetch=True` (note the PSL doesn't change that often).
 * 0.3
     * Added support for a huge class of missing TLDs (Issue #1). No more need for [IANA](http://www.iana.org).
-    * If you pass `fetch=False` to `tldextract.extract`, or the connection to the Public Suffix List fails, the module will fall back on the included [snapshot](https://github.com/john-kurkowski/tldextract/blob/master/tldextract/.tld_set_snapshot).
     * Internally, to support more TLDs, switched from a very long regex to set-based lookup. Cursory `timeit` runs suggest performance is the same as v0.2, even with the 1000s of new TLDs. (Note however that module init time has gone up into the tens of milliseconds as it must unpickle the set. This could add up if you're calling the script externally.)
-
-## Note About Caching
-
-In order to not slam TLD sources for every single extraction and app startup, the
-TLD set is cached indefinitely in `/path/to/tldextract/.tld_set`. This location
-can be overridden by specifying `cache_file` in the call to
-`tldextract.extract`. If you want to stay fresh with the TLD
-definitions--though they don't change often--delete this file occasionally.
-
-It is also recommended to delete this file after upgrading this lib.
 
 # Public API
 
 I know it's just one method, but I've needed this functionality in a few
 projects and programming languages, so I've uploaded
-[`tldextract` to App Engine](http://tldextract.appspot.com/). Just hit it with
+[`tldextract` to App Engine](http://tldextract.appspot.com/). It's there on
+GAE's free pricing plan until Google cuts it off. Just hit it with
 your favorite HTTP client with the URL you want parsed like so:
 
     $ curl "http://tldextract.appspot.com/api/extract?url=http://www.bbc.co.uk/foo/bar/baz.html"
