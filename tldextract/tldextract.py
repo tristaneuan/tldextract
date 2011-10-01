@@ -87,8 +87,8 @@ class TLDExtract(object):
         Constructs a callable for extracting subdomain, domain, and TLD
         components from a URL.
 
-        If fetch is True (the default) and no cached TLD set is found, or it's
-        expired, this extractor will fetch TLD sources live over HTTP on first
+        If fetch is True (the default) and the TLD cache set doesn't exist or is
+        expired, this extractor will re/fetch TLD sources live over HTTP on
         use. Set to False to not make HTTP requests. Either way, if the TLD set
         can't be read, the module will fall back to the included TLD set
         snapshot.
@@ -98,13 +98,16 @@ class TLDExtract(object):
 
         If cache_ttl_sec > 0 and cache_file's last-modified time is more than
         cache_ttl_sec ago, the cache_file is expired and this instance will
-        refetch it on call (assuming fetch=True).
+        refetch it on call (fetch must be True for this setting to make sense).
         """
         self.fetch = fetch
         self.cache_file = cache_file
         self.cache_file_mtime = 0
         self.cache_ttl_sec = max(cache_ttl_sec, 0)
         self._extractor = None
+
+        if not self.fetch and self.cache_ttl_sec:
+            raise ValueError("cache_ttl_sec=%d doesn't make sense when fetch=%s" % (self.cache_ttl_sec, self.fetch))
 
     def __call__(self, url):
         """
