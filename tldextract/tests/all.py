@@ -1,12 +1,17 @@
 import doctest
+import os
 import sys
+import tempfile
+import time
 import unittest
 
 import tldextract
-from tldextract import extract, urlsplit
+from tldextract import extract, urlsplit, TLDExtract
 
 class ExtractTest(unittest.TestCase):
-    def assertExtract(self, expected_subdomain, expected_domain, expected_tld, url, fns=(extract, urlsplit)):
+    tldextract_with_ttl = TLDExtract(cache_ttl_sec=30)
+
+    def assertExtract(self, expected_subdomain, expected_domain, expected_tld, url, fns=(extract, urlsplit, tldextract_with_ttl)):
         for fn in fns:
           ext = fn(url)
           self.assertEquals(expected_subdomain, ext.subdomain)
@@ -68,10 +73,36 @@ class ExtractTest(unittest.TestCase):
         self.assertExtract('www', 'metp', 'net.cn', 'http://www.metp.net.cn')
         #self.assertExtract('www', 'net', 'cn', 'http://www.net.cn') # This is unhandled by the PSL. Or is it?
 
+class TTLTest(unittest.TestCase):
+    def test_cache_file_expiry(self):
+        with tempfile.NamedTemporaryFile() as tmp:
+          mtime = os.path.getmtime(tmp.name)
+          extract = TLDExtract(cache_file=tmp.name)
+
+          extract.cache_ttl_sec = 0
+          time.sleep(1)
+          extract('www.google.com')
+          mtime_after_fetch = os.path.getmtime(tmp.name)
+          self.assertTrue(mtime < mtime_after_fetch, str(mtime) + ' and ' + str(mtime_after_fetch))
+
+          extract('www.yahoo.com')
+          mtime_after_second_fetch = os.path.getmtime(tmp.name)
+          self.assertEquals(mtime_after_fetch, mtime_after_second_fetch)
+
+          extract.cache_ttl_sec = 1
+          time.sleep(1.1)
+          extract('www.bing.com')
+          mtime_after_cache_expiry = os.path.getmtime(tmp.name)
+          self.assertTrue(mtime_after_second_fetch < mtime_after_cache_expiry)
+
+    def test_make_sense(self):
+        self.assertRaises(ValueError, TLDExtract, fetch=False, cache_ttl_sec=1)
+
 def test_suite():
     return unittest.TestSuite([
         doctest.DocTestSuite(tldextract.tldextract),
         unittest.TestLoader().loadTestsFromTestCase(ExtractTest),
+        unittest.TestLoader().loadTestsFromTestCase(TTLTest),
     ])
 
 def run_tests(stream=sys.stderr):
