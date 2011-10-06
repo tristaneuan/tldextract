@@ -145,7 +145,7 @@ class TLDExtract(object):
         If fetch and cache_ttl_sec have been set, is the TLD set older than
         the TTL?
         """
-        return self.cache_ttl_sec and self.cache_file_mtime and self.fetch and time.time() - self.cache_file_mtime > self.cache_ttl_sec
+        return self.cache_ttl_sec and self.cache_file_mtime and (time.time() - self.cache_file_mtime) > self.cache_ttl_sec
 
     def _get_tld_extractor(self):
         if self._extractor and not self.expired:
@@ -158,11 +158,13 @@ class TLDExtract(object):
             if not self.expired:
                 try:
                     with open(cached_file) as f:
-                        self._extractor = _PublicSuffixListTLDExtractor(pickle.load(f))
-                        return self._extractor
-                except IOError, ioe:
+                        tlds = pickle.load(f)
+                except Exception, ioe:
                     LOG.error("error reading TLD cache file %s: %s", cached_file, ioe)
                     self.cache_file_mtime = 0
+                else:
+                    self._extractor = _PublicSuffixListTLDExtractor(tlds)
+                    return self._extractor
 
         tlds = frozenset()
         if self.fetch:
